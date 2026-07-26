@@ -1270,7 +1270,7 @@ def main() -> None:
 
         india_message = build_message(
             heading=(
-                "🇮🇳 India — Top 10 "
+                f"🇮🇳 India — Top {TOP_N} "
                 "Google Trends "
                 "(Past 4 Hours, "
                 "Live Relevance Order)"

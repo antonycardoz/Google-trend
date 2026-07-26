@@ -1,4 +1,4 @@
-name: Send India Google Trends to Telegram
+name: Send India and Kerala Trends to Telegram
 
 on:
   schedule:
@@ -8,7 +8,7 @@ on:
 jobs:
   send-trends:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
@@ -26,6 +26,6 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TOP_N: "5"
+          TOP_N: "10"
           HOURS: "4"
         run: python bot.py

@@ -8,7 +8,10 @@ from typing import Optional
 
 import requests
 from deep_translator import GoogleTranslator
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import (
+    TimeoutError as PlaywrightTimeoutError,
+)
+from playwright.sync_api import sync_playwright
 
 
 # ============================================================
@@ -22,11 +25,13 @@ TOP_N = int(os.environ.get("TOP_N", "10"))
 HOURS = int(os.environ.get("HOURS", "4"))
 
 TRENDS_PAGE_URL = (
-    f"https://trends.google.com/trending"
+    "https://trends.google.com/trending"
     f"?geo=IN&hours={HOURS}&hl=en"
 )
 
 TRENDS_RSS_URL = "https://trends.google.com/trending/rss"
+GOOGLE_NEWS_RSS_URL = "https://news.google.com/rss/search"
+
 HT_NS = "https://trends.google.com/trending/rss"
 
 
@@ -93,21 +98,34 @@ KERALA_TERMS = {
 
 
 # ============================================================
-# TEXT HELPERS
+# GENERAL HELPERS
 # ============================================================
 
 def normalize_text(value: str) -> str:
-    """Normalize text so webpage and RSS titles can be matched."""
+    """
+    Normalize text so that titles from the live webpage,
+    Google Trends RSS and Google News can be compared.
+    """
 
     value = value.casefold().strip()
-    value = re.sub(r"[^\w\u0D00-\u0D7F]+", " ", value)
-    value = re.sub(r"\s+", " ", value)
+
+    value = re.sub(
+        r"[^\w\u0D00-\u0D7F]+",
+        " ",
+        value,
+    )
+
+    value = re.sub(
+        r"\s+",
+        " ",
+        value,
+    )
 
     return value.strip()
 
 
 def contains_malayalam(value: str) -> bool:
-    """Check whether a string contains Malayalam characters."""
+    """Return True when Malayalam characters exist."""
 
     return any(
         "\u0D00" <= character <= "\u0D7F"
@@ -119,8 +137,8 @@ def translate_to_english(value: str) -> str:
     """
     Translate text into English.
 
-    If translation fails, return the original text so the
-    workflow can continue.
+    If translation fails, return the original text so that
+    the workflow does not stop.
     """
 
     if not value:
@@ -136,14 +154,16 @@ def translate_to_english(value: str) -> str:
 
     except Exception as error:
         print(
-            f"Translation warning: {error}",
+            f"Translation warning for "
+            f"'{value[:60]}': {error}",
             file=sys.stderr,
         )
+
         return value
 
 
 def shorten(value: str, limit: int) -> str:
-    """Shorten text to help stay within Telegram's message limit."""
+    """Shorten text to stay within Telegram message limits."""
 
     value = " ".join(value.split())
 
@@ -155,10 +175,9 @@ def shorten(value: str, limit: int) -> str:
 
 def extract_search_volume(row_text: str) -> str:
     """
-    Extract values such as:
+    Extract search-volume values such as:
 
     500+
-    1K+
     2K+
     50K+
     1M+
@@ -187,7 +206,10 @@ def extract_search_volume(row_text: str) -> str:
 # ============================================================
 
 def looks_like_data_row(row_text: str) -> bool:
-    """Determine whether an element looks like a trends table row."""
+    """
+    Check whether an element from the page looks like
+    a Google Trends result row.
+    """
 
     lowered = row_text.casefold()
 
@@ -200,17 +222,21 @@ def looks_like_data_row(row_text: str) -> bool:
         "started",
     }
 
-    if any(phrase in lowered for phrase in excluded_phrases):
+    if any(
+        phrase in lowered
+        for phrase in excluded_phrases
+    ):
         return False
 
-    if not extract_search_volume(row_text) == "Unknown":
-        return True
-
-    return False
+    return extract_search_volume(row_text) != "Unknown"
 
 
-def extract_keyword_from_row(row_text: str) -> Optional[str]:
-    """Extract the trend keyword from a Google Trends table row."""
+def extract_keyword_from_row(
+    row_text: str,
+) -> Optional[str]:
+    """
+    Extract the primary trend keyword from one visible row.
+    """
 
     lines = [
         line.strip()
@@ -228,7 +254,8 @@ def extract_keyword_from_row(row_text: str) -> Optional[str]:
             continue
 
         if re.search(
-            r"\b\d+\s*(?:minutes?|hours?|days?)\s+ago\b",
+            r"\b\d+\s*"
+            r"(?:minutes?|hours?|days?)\s+ago\b",
             lowered,
         ):
             continue
@@ -256,11 +283,12 @@ def extract_keyword_from_row(row_text: str) -> Optional[str]:
 
 def scrape_live_relevance_order() -> list[dict]:
     """
-    Open the live Google Trends Trending Now page and collect
-    its displayed order.
+    Read the current Google Trends India webpage and preserve
+    the exact order shown under:
 
-    This keeps the same order shown under:
-    India → Past 4 hours → By relevance.
+    India
+    Past 4 hours
+    By relevance
     """
 
     results: list[dict] = []
@@ -271,7 +299,8 @@ def scrape_live_relevance_order() -> list[dict]:
             args=[
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
-                "--disable-blink-features=AutomationControlled",
+                "--disable-blink-features="
+                "AutomationControlled",
             ],
         )
 
@@ -283,15 +312,21 @@ def scrape_live_relevance_order() -> list[dict]:
                 "height": 1080,
             },
             user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/150.0.0.0 Safari/537.36"
+                "Mozilla/5.0 "
+                "(Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 "
+                "(KHTML, like Gecko) "
+                "Chrome/150.0.0.0 "
+                "Safari/537.36"
             ),
         )
 
         page = context.new_page()
 
-        print(f"Opening live Google Trends page: {TRENDS_PAGE_URL}")
+        print(
+            "Opening live Google Trends page:"
+        )
+        print(TRENDS_PAGE_URL)
 
         page.goto(
             TRENDS_PAGE_URL,
@@ -304,16 +339,16 @@ def scrape_live_relevance_order() -> list[dict]:
                 "networkidle",
                 timeout=30_000,
             )
+
         except PlaywrightTimeoutError:
             print(
-                "Google Trends continued loading resources; "
-                "continuing with the visible page."
+                "The page continued loading resources. "
+                "Continuing with the visible table."
             )
 
-        # Allow the trends table to render.
         time.sleep(5)
 
-        # Try to close a consent dialog if Google displays one.
+        # Close a possible Google consent dialog.
         consent_buttons = [
             "Accept all",
             "I agree",
@@ -329,7 +364,9 @@ def scrape_live_relevance_order() -> list[dict]:
                     exact=True,
                 )
 
-                if button.is_visible(timeout=1_000):
+                if button.is_visible(
+                    timeout=1_000
+                ):
                     button.click()
                     time.sleep(2)
                     break
@@ -337,8 +374,6 @@ def scrape_live_relevance_order() -> list[dict]:
             except Exception:
                 pass
 
-        # Google may use either accessibility rows or Material
-        # table containers. Try several possible selectors.
         selector_candidates = [
             '[role="row"]',
             "table tbody tr",
@@ -353,27 +388,34 @@ def scrape_live_relevance_order() -> list[dict]:
 
             try:
                 count = locator.count()
+
             except Exception:
                 count = 0
 
             if count > 1:
                 row_locator = locator
+
                 print(
-                    f"Using row selector: {selector} "
+                    f"Using table selector: "
+                    f"{selector} "
                     f"({count} elements)"
                 )
+
                 break
 
         if row_locator is None:
             browser.close()
+
             raise RuntimeError(
-                "Could not locate the live Google Trends table. "
-                "Google may have changed the webpage structure."
+                "Could not find the Google Trends table. "
+                "Google may have changed the webpage."
             )
 
         seen_keywords: set[str] = set()
 
-        for index in range(row_locator.count()):
+        for index in range(
+            row_locator.count()
+        ):
             if len(results) >= TOP_N:
                 break
 
@@ -383,6 +425,7 @@ def scrape_live_relevance_order() -> list[dict]:
                 row_text = row.inner_text(
                     timeout=5_000,
                 ).strip()
+
             except Exception:
                 continue
 
@@ -392,12 +435,16 @@ def scrape_live_relevance_order() -> list[dict]:
             if not looks_like_data_row(row_text):
                 continue
 
-            keyword = extract_keyword_from_row(row_text)
+            keyword = extract_keyword_from_row(
+                row_text
+            )
 
             if not keyword:
                 continue
 
-            normalized_keyword = normalize_text(keyword)
+            normalized_keyword = normalize_text(
+                keyword
+            )
 
             if not normalized_keyword:
                 continue
@@ -405,7 +452,9 @@ def scrape_live_relevance_order() -> list[dict]:
             if normalized_keyword in seen_keywords:
                 continue
 
-            seen_keywords.add(normalized_keyword)
+            seen_keywords.add(
+                normalized_keyword
+            )
 
             results.append(
                 {
@@ -423,8 +472,8 @@ def scrape_live_relevance_order() -> list[dict]:
 
     if not results:
         raise RuntimeError(
-            "No trends were extracted from the live "
-            "Google Trends page."
+            "No live Google Trends results "
+            "were extracted."
         )
 
     print(
@@ -436,15 +485,15 @@ def scrape_live_relevance_order() -> list[dict]:
 
 
 # ============================================================
-# GOOGLE TRENDS RSS NEWS
+# GOOGLE TRENDS RSS
 # ============================================================
 
-def fetch_rss_trends() -> list[dict]:
+def fetch_trends_rss() -> list[dict]:
     """
-    Fetch Google Trends RSS data.
+    Get Google Trends RSS data.
 
-    RSS is used to obtain the news title, source and URL.
-    The RSS ordering is not used.
+    This is used for search volume and Google's own
+    related-news articles. Its ordering is not used.
     """
 
     response = requests.get(
@@ -455,8 +504,10 @@ def fetch_rss_trends() -> list[dict]:
         },
         headers={
             "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 Chrome/150 Safari/537.36"
+                "Mozilla/5.0 "
+                "(Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 "
+                "Chrome/150 Safari/537.36"
             ),
             "Accept-Language": "en-IN,en;q=0.9",
         },
@@ -465,11 +516,15 @@ def fetch_rss_trends() -> list[dict]:
 
     response.raise_for_status()
 
-    root = ET.fromstring(response.content)
+    root = ET.fromstring(
+        response.content
+    )
 
     rss_results: list[dict] = []
 
-    for item in root.findall("./channel/item"):
+    for item in root.findall(
+        "./channel/item"
+    ):
         keyword = (
             item.findtext("title") or ""
         ).strip()
@@ -485,61 +540,78 @@ def fetch_rss_trends() -> list[dict]:
             f"{{{HT_NS}}}news_item"
         )
 
-        news = None
+        news_articles = []
 
-        # Use the first news item supplied by Google Trends.
-        if news_items:
-            news_element = news_items[0]
+        for news_element in news_items:
+            title = (
+                news_element.findtext(
+                    f"{{{HT_NS}}}"
+                    "news_item_title"
+                )
+                or ""
+            ).strip()
 
-            news = {
-                "title": (
-                    news_element.findtext(
-                        f"{{{HT_NS}}}news_item_title"
-                    )
-                    or ""
-                ).strip(),
-                "url": (
-                    news_element.findtext(
-                        f"{{{HT_NS}}}news_item_url"
-                    )
-                    or ""
-                ).strip(),
-                "source": (
-                    news_element.findtext(
-                        f"{{{HT_NS}}}news_item_source"
-                    )
-                    or ""
-                ).strip(),
-            }
+            url = (
+                news_element.findtext(
+                    f"{{{HT_NS}}}"
+                    "news_item_url"
+                )
+                or ""
+            ).strip()
+
+            source = (
+                news_element.findtext(
+                    f"{{{HT_NS}}}"
+                    "news_item_source"
+                )
+                or ""
+            ).strip()
+
+            if title and url:
+                news_articles.append(
+                    {
+                        "title": title,
+                        "url": url,
+                        "source": (
+                            source
+                            or "Google Trends"
+                        ),
+                    }
+                )
 
         if keyword:
             rss_results.append(
                 {
                     "keyword_original": keyword,
-                    "normalized_keyword": normalize_text(
-                        keyword
-                    ),
+                    "normalized_keyword":
+                        normalize_text(keyword),
                     "traffic": traffic,
-                    "news": news,
+                    "news_articles":
+                        news_articles,
                 }
             )
 
     print(
-        f"Fetched {len(rss_results)} RSS trend records."
+        f"Fetched {len(rss_results)} "
+        "Google Trends RSS records."
     )
 
     return rss_results
 
 
-def find_matching_rss_item(
+def find_matching_trends_rss_item(
     live_keyword: str,
     rss_results: list[dict],
 ) -> Optional[dict]:
-    """Match a live webpage trend with its RSS news record."""
+    """
+    Match a live-page trend with its Google Trends RSS item.
+    """
 
-    normalized_live = normalize_text(live_keyword)
+    normalized_live = normalize_text(
+        live_keyword
+    )
 
-    # First attempt: exact normalized title match.
+    # Exact normalized match.
     for rss_item in rss_results:
         if (
             rss_item["normalized_keyword"]
@@ -547,83 +619,292 @@ def find_matching_rss_item(
         ):
             return rss_item
 
-    # Second attempt: one title contains the other.
+    # One title contains the other.
     for rss_item in rss_results:
         normalized_rss = rss_item[
             "normalized_keyword"
         ]
 
         if (
-            normalized_live in normalized_rss
-            or normalized_rss in normalized_live
+            normalized_live
+            in normalized_rss
+            or normalized_rss
+            in normalized_live
         ):
             return rss_item
 
-    # Third attempt: compare overlapping words.
-    live_words = set(normalized_live.split())
+    # Word-overlap fallback.
+    live_words = set(
+        normalized_live.split()
+    )
 
     best_item = None
     best_score = 0.0
 
     for rss_item in rss_results:
         rss_words = set(
-            rss_item["normalized_keyword"].split()
+            rss_item[
+                "normalized_keyword"
+            ].split()
         )
 
         if not live_words or not rss_words:
             continue
 
         overlap = len(
-            live_words.intersection(rss_words)
+            live_words.intersection(
+                rss_words
+            )
         )
 
         union = len(
-            live_words.union(rss_words)
+            live_words.union(
+                rss_words
+            )
         )
 
-        score = overlap / union if union else 0
+        score = (
+            overlap / union
+            if union
+            else 0.0
+        )
 
         if score > best_score:
             best_score = score
             best_item = rss_item
 
-    if best_score >= 0.5:
+    if best_score >= 0.45:
         return best_item
 
     return None
 
 
-def attach_google_news(
+# ============================================================
+# GOOGLE NEWS FALLBACK
+# ============================================================
+
+def parse_google_news_response(
+    response: requests.Response,
+) -> Optional[dict]:
+    """
+    Read the first valid article from a Google News RSS result.
+    """
+
+    root = ET.fromstring(
+        response.content
+    )
+
+    for item in root.findall(
+        "./channel/item"
+    ):
+        title = (
+            item.findtext("title") or ""
+        ).strip()
+
+        url = (
+            item.findtext("link") or ""
+        ).strip()
+
+        published = (
+            item.findtext("pubDate") or ""
+        ).strip()
+
+        source_element = item.find(
+            "source"
+        )
+
+        source = ""
+
+        if (
+            source_element is not None
+            and source_element.text
+        ):
+            source = (
+                source_element.text.strip()
+            )
+
+        if not title or not url:
+            continue
+
+        # Google News often adds the source to the
+        # end of the title.
+        if (
+            source
+            and title.endswith(
+                f" - {source}"
+            )
+        ):
+            title = title[
+                : -(len(source) + 3)
+            ].strip()
+
+        return {
+            "title": title,
+            "url": url,
+            "source": (
+                source
+                or "Google News"
+            ),
+            "published": published,
+        }
+
+    return None
+
+
+def fetch_google_news(
+    keyword: str,
+) -> Optional[dict]:
+    """
+    Find one recent article for the trend.
+
+    Search order:
+
+    1. Exact keyword from the last day.
+    2. Keyword from the last day.
+    3. Keyword from the last two days.
+    """
+
+    if not keyword:
+        return None
+
+    search_queries = [
+        f'"{keyword}" when:1d',
+        f"{keyword} when:1d",
+        f"{keyword} when:2d",
+    ]
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 "
+            "(Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 "
+            "Chrome/150 Safari/537.36"
+        ),
+        "Accept-Language":
+            "en-IN,en;q=0.9",
+    }
+
+    for query in search_queries:
+        try:
+            response = requests.get(
+                GOOGLE_NEWS_RSS_URL,
+                params={
+                    "q": query,
+                    "hl": "en-IN",
+                    "gl": "IN",
+                    "ceid": "IN:en",
+                },
+                headers=headers,
+                timeout=20,
+            )
+
+            response.raise_for_status()
+
+            article = (
+                parse_google_news_response(
+                    response
+                )
+            )
+
+            if article:
+                print(
+                    "Google News fallback "
+                    f"found for: {keyword}"
+                )
+
+                return article
+
+        except Exception as error:
+            print(
+                "Google News warning for "
+                f"'{keyword}': {error}",
+                file=sys.stderr,
+            )
+
+    print(
+        "No recent article found for: "
+        f"{keyword}",
+        file=sys.stderr,
+    )
+
+    return None
+
+
+# ============================================================
+# ATTACH NEWS WITHOUT CHANGING TREND ORDER
+# ============================================================
+
+def attach_news(
     live_trends: list[dict],
     rss_results: list[dict],
 ) -> list[dict]:
     """
-    Add the Google Trends news headline and URL to each
-    live-page trend without changing the live page order.
+    Attach one article to each live trend.
+
+    Priority:
+
+    1. Google Trends RSS article.
+    2. Google News RSS fallback.
+
+    The live webpage order is never changed.
     """
 
     combined_results = []
 
-    for live_trend in live_trends:
+    for position, live_trend in enumerate(
+        live_trends,
+        start=1,
+    ):
         result = live_trend.copy()
 
-        rss_match = find_matching_rss_item(
-            live_trend["keyword_original"],
-            rss_results,
+        keyword = live_trend.get(
+            "keyword_original",
+            "",
         )
 
+        print(
+            f"Finding news "
+            f"{position}/{len(live_trends)}: "
+            f"{keyword}"
+        )
+
+        rss_match = (
+            find_matching_trends_rss_item(
+                keyword,
+                rss_results,
+            )
+        )
+
+        news = None
+
         if rss_match:
-            result["news"] = rss_match.get("news")
+            news_articles = rss_match.get(
+                "news_articles",
+                [],
+            )
+
+            if news_articles:
+                news = news_articles[0]
 
             if (
-                result.get("traffic") == "Unknown"
+                result.get("traffic")
+                == "Unknown"
                 and rss_match.get("traffic")
             ):
-                result["traffic"] = rss_match[
-                    "traffic"
-                ]
+                result["traffic"] = (
+                    rss_match["traffic"]
+                )
 
-        combined_results.append(result)
+        if not news:
+            news = fetch_google_news(
+                keyword
+            )
+
+        result["news"] = news
+
+        combined_results.append(
+            result
+        )
 
     return combined_results
 
@@ -632,13 +913,23 @@ def attach_google_news(
 # TRANSLATION
 # ============================================================
 
-def translate_trend(trend: dict) -> dict:
-    """Translate a trend keyword and its news into English."""
+def translate_trend(
+    trend: dict,
+) -> dict:
+    """
+    Translate the trend keyword, news headline and source
+    into English.
+    """
 
     translated = trend.copy()
 
-    translated["keyword"] = translate_to_english(
-        trend.get("keyword_original", "")
+    translated["keyword"] = (
+        translate_to_english(
+            trend.get(
+                "keyword_original",
+                "",
+            )
+        )
     )
 
     news = trend.get("news")
@@ -658,7 +949,9 @@ def translate_trend(trend: dict) -> dict:
             )
         )
 
-        translated["news"] = translated_news
+        translated["news"] = (
+            translated_news
+        )
 
     return translated
 
@@ -666,7 +959,7 @@ def translate_trend(trend: dict) -> dict:
 def translate_trends(
     trends: list[dict],
 ) -> list[dict]:
-    """Translate a list of trends."""
+    """Translate all selected trends."""
 
     translated_results = []
 
@@ -675,7 +968,7 @@ def translate_trends(
         start=1,
     ):
         print(
-            f"Translating trend "
+            f"Translating "
             f"{index}/{len(trends)}..."
         )
 
@@ -687,11 +980,15 @@ def translate_trends(
 
 
 # ============================================================
-# KERALA SELECTION
+# KERALA FILTER
 # ============================================================
 
-def kerala_score(trend: dict) -> int:
-    """Calculate whether a trend appears Kerala-related."""
+def kerala_score(
+    trend: dict,
+) -> int:
+    """
+    Calculate whether a trend appears related to Kerala.
+    """
 
     keyword = trend.get(
         "keyword_original",
@@ -700,8 +997,15 @@ def kerala_score(trend: dict) -> int:
 
     news = trend.get("news") or {}
 
-    news_title = news.get("title", "")
-    news_source = news.get("source", "")
+    news_title = news.get(
+        "title",
+        "",
+    )
+
+    news_source = news.get(
+        "source",
+        "",
+    )
 
     combined = " ".join(
         [
@@ -716,7 +1020,9 @@ def kerala_score(trend: dict) -> int:
     if contains_malayalam(keyword):
         score += 100
 
-    if contains_malayalam(news_title):
+    if contains_malayalam(
+        news_title
+    ):
         score += 50
 
     for term in KERALA_TERMS:
@@ -727,16 +1033,16 @@ def kerala_score(trend: dict) -> int:
 
 
 def select_kerala_trends(
-    all_live_trends: list[dict],
+    trends: list[dict],
 ) -> list[dict]:
     """
-    Select Kerala-related items while keeping their original
-    Google relevance order.
+    Select Kerala-focused trends while preserving the
+    original Google relevance order.
     """
 
     selected = []
 
-    for trend in all_live_trends:
+    for trend in trends:
         if kerala_score(trend) > 0:
             selected.append(trend)
 
@@ -747,7 +1053,7 @@ def select_kerala_trends(
 
 
 # ============================================================
-# TELEGRAM
+# TELEGRAM MESSAGE
 # ============================================================
 
 def build_message(
@@ -755,7 +1061,7 @@ def build_message(
     trends: list[dict],
     note: str = "",
 ) -> str:
-    """Build a Telegram HTML message."""
+    """Build a formatted Telegram HTML message."""
 
     lines = [
         f"<b>{html.escape(heading)}</b>",
@@ -772,9 +1078,10 @@ def build_message(
 
     if not trends:
         lines.append(
-            "No matching trends were found during "
-            "this four-hour period."
+            "No matching trends were found "
+            "during this four-hour period."
         )
+
         return "\n".join(lines)
 
     for position, trend in enumerate(
@@ -783,21 +1090,29 @@ def build_message(
     ):
         keyword = html.escape(
             shorten(
-                trend.get("keyword", ""),
+                trend.get(
+                    "keyword",
+                    "",
+                ),
                 85,
             )
         )
 
         traffic = html.escape(
-            trend.get("traffic", "Unknown")
+            trend.get(
+                "traffic",
+                "Unknown",
+            )
         )
 
         lines.append(
-            f"{position}. 🔥 <b>{keyword}</b>"
+            f"{position}. 🔥 "
+            f"<b>{keyword}</b>"
         )
 
         lines.append(
-            f"Searches: <b>{traffic}</b>"
+            f"Searches: "
+            f"<b>{traffic}</b>"
         )
 
         news = trend.get("news")
@@ -816,7 +1131,8 @@ def build_message(
 
             source = html.escape(
                 shorten(
-                    news.get("source") or "News",
+                    news.get("source")
+                    or "News",
                     40,
                 )
             )
@@ -828,26 +1144,30 @@ def build_message(
 
             lines.append(
                 f'📰 <a href="{news_url}">'
-                f"{news_title}</a> — {source}"
+                f"{news_title}</a> "
+                f"— {source}"
             )
 
         else:
             lines.append(
-                "📰 No related news was supplied "
-                "by Google Trends."
+                "📰 No recent relevant "
+                "news article was found."
             )
 
         lines.append("")
 
     lines.append(
-        "Source: Google Trends Trending Now"
+        "Source: Google Trends "
+        "Trending Now"
     )
 
     return "\n".join(lines)
 
 
-def send_telegram(message: str) -> None:
-    """Send a message using Telegram Bot API."""
+def send_telegram(
+    message: str,
+) -> None:
+    """Send one Telegram message."""
 
     if not BOT_TOKEN:
         raise RuntimeError(
@@ -868,7 +1188,8 @@ def send_telegram(message: str) -> None:
             "chat_id": CHAT_ID,
             "text": message,
             "parse_mode": "HTML",
-            "disable_web_page_preview": True,
+            "disable_web_page_preview":
+                True,
         },
         timeout=30,
     )
@@ -879,7 +1200,8 @@ def send_telegram(message: str) -> None:
 
     if not result.get("ok"):
         raise RuntimeError(
-            f"Telegram API error: {result}"
+            f"Telegram API error: "
+            f"{result}"
         )
 
 
@@ -890,71 +1212,110 @@ def send_telegram(message: str) -> None:
 def main() -> None:
     try:
         print(
-            "Reading the live Google Trends page..."
+            "Reading live Google Trends..."
         )
 
-        live_trends = scrape_live_relevance_order()
+        live_trends = (
+            scrape_live_relevance_order()
+        )
 
         print(
-            "Fetching Google Trends related news..."
+            "Reading Google Trends RSS..."
         )
 
-        rss_results = fetch_rss_trends()
+        rss_results = (
+            fetch_trends_rss()
+        )
 
-        combined_trends = attach_google_news(
+        print(
+            "Attaching related news..."
+        )
+
+        combined_trends = attach_news(
             live_trends,
             rss_results,
         )
 
-        india_original = combined_trends[:TOP_N]
-
-        kerala_original = select_kerala_trends(
-            combined_trends
+        # First 10 exactly in Google's live relevance order.
+        india_original = (
+            combined_trends[:TOP_N]
         )
 
-        india_trends = translate_trends(
-            india_original
+        # Kerala-focused selection from the same live list.
+        kerala_original = (
+            select_kerala_trends(
+                combined_trends
+            )
         )
 
-        kerala_trends = translate_trends(
-            kerala_original
+        print(
+            "Translating India trends..."
+        )
+
+        india_trends = (
+            translate_trends(
+                india_original
+            )
+        )
+
+        print(
+            "Translating Kerala trends..."
+        )
+
+        kerala_trends = (
+            translate_trends(
+                kerala_original
+            )
         )
 
         india_message = build_message(
             heading=(
-                "🇮🇳 India — Top 10 Google Trends "
-                "(Past 4 Hours, Live Relevance Order)"
+                "🇮🇳 India — Top 10 "
+                "Google Trends "
+                "(Past 4 Hours, "
+                "Live Relevance Order)"
             ),
             trends=india_trends,
         )
 
         kerala_message = build_message(
             heading=(
-                "🌴 Kerala-Focused Google Trends "
+                "🌴 Kerala-Focused "
+                "Google Trends "
                 "(Past 4 Hours)"
             ),
             trends=kerala_trends,
             note=(
-                "Kerala-focused results are filtered "
-                "from the live India trends using "
-                "Malayalam and Kerala-related terms."
+                "Kerala-focused results "
+                "are selected from the "
+                "live India feed using "
+                "Malayalam and "
+                "Kerala-related terms."
             ),
         )
 
         print(
-            "Sending India trends to Telegram..."
+            "Sending India message..."
         )
-        send_telegram(india_message)
+
+        send_telegram(
+            india_message
+        )
 
         print(
-            "Sending Kerala trends to Telegram..."
+            "Sending Kerala message..."
         )
-        send_telegram(kerala_message)
+
+        send_telegram(
+            kerala_message
+        )
 
         print(
-            f"Successfully sent "
-            f"{len(india_trends)} India trends and "
-            f"{len(kerala_trends)} Kerala-focused trends."
+            "Success: sent "
+            f"{len(india_trends)} "
+            "India trends and "
+            f"{len(kerala_trends)} "
+            "Kerala-focused trends."
         )
 
     except Exception as error:
@@ -962,6 +1323,7 @@ def main() -> None:
             f"Bot failed: {error}",
             file=sys.stderr,
         )
+
         raise
 
 
